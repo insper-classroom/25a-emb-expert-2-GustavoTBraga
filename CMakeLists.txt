@@ -35,4 +35,4 @@ if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
   add_compile_options(-Wno-maybe-uninitialized)
 endif()
 
-add_subdirectory(hid)
+add_subdirectory(main)
