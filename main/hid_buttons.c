@@ -1,8 +1,3 @@
-// ======================================================================
-//  Pico W  –  HID Keyboard (A-W-S-D)
-//  LED apaga quando a CPU é parada; watchdog 3 s para não atrapalhar BT
-// ======================================================================
-
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -10,7 +5,6 @@
 #include "hardware/watchdog.h"
 #include "btstack.h"
 
-// ---------------------- Pinos ------------------------------------------
 #define LED_PIN      11
 #define BTN_A_PIN     9
 #define BTN_W_PIN    17
@@ -20,7 +14,6 @@
 static const uint8_t BTN_PINS[4] = { BTN_A_PIN, BTN_W_PIN, BTN_S_PIN, BTN_D_PIN };
 static const uint8_t KEY_USAGE[4] = { 0x04, 0x1A, 0x16, 0x07 };   // A W S D
 
-// ---------------------- HID Descriptor ---------------------------------
 #define REPORT_ID 0x01
 const uint8_t HID_DESC[] = {
     0x05,0x01,0x09,0x06,0xA1,0x01,0x85,REPORT_ID,
@@ -32,7 +25,6 @@ const uint8_t HID_DESC[] = {
     0xC0
 };
 
-// ---------------------- Estado global ----------------------------------
 static btstack_timer_source_t led_tmr, btn_tmr;
 static bool    led_state            = false;
 static uint8_t last_btn_state       = 0;
@@ -42,11 +34,10 @@ static uint16_t hid_cid             = 0;
 
 enum { APP_BOOT, APP_IDLE, APP_CONN } app_state = APP_BOOT;
 
-// ---------------------- LED helpers ------------------------------------
 static inline void led_set(bool on){ gpio_put(LED_PIN, on); }
 
 static void led_tick(btstack_timer_source_t *ts){
-    watchdog_update();                       // ← kick extra a cada 500 ms
+    watchdog_update();
     led_state = !led_state;
     led_set(led_state);
     btstack_run_loop_set_timer(ts, 500);
@@ -63,11 +54,10 @@ static void led_on(void){
     led_set(true);
 }
 
-// ---------------------- Botões + watchdog ------------------------------
 static inline bool btn_pressed(int i){ return gpio_get(BTN_PINS[i]) == 0; }
 
 static void btn_tick(btstack_timer_source_t *ts){
-    watchdog_update();                       // ← kick a cada 10 ms
+    watchdog_update();
 
     uint8_t st = 0;
     for(int i=0;i<4;++i) if(btn_pressed(i)) st |= 1u<<i;
@@ -86,28 +76,26 @@ static void btn_tick(btstack_timer_source_t *ts){
     btstack_run_loop_add_timer(ts);
 }
 
-// ---------------------- HID helper -------------------------------------
 static void send_report(int mod, int key){
     uint8_t msg[] = { 0xA1, REPORT_ID, mod, 0, key, 0,0,0,0,0 };
     hid_device_send_interrupt_message(hid_cid, msg, sizeof(msg));
 }
 
-// ---------------------- Packet handler ---------------------------------
-static void pk_handler(uint8_t type, uint16_t ch, uint8_t *pkt, uint16_t){
+static void pk_handler(uint8_t type, uint16_t ch, uint8_t *pkt, uint16_t) {
     (void)ch;
-    if(type!=HCI_EVENT_PACKET) return;
-    switch(hci_event_packet_get_type(pkt)){
+    if (type!=HCI_EVENT_PACKET) return;
+    switch(hci_event_packet_get_type(pkt)) {
     case BTSTACK_EVENT_STATE:
-        if(btstack_event_state_get_state(pkt)==HCI_STATE_WORKING){
+        if (btstack_event_state_get_state(pkt)==HCI_STATE_WORKING) {
             app_state = APP_IDLE;
             led_blink_start();
         }
         break;
 
     case HCI_EVENT_HID_META:
-        switch(hci_event_hid_meta_get_subevent_code(pkt)){
+        switch(hci_event_hid_meta_get_subevent_code(pkt)) {
         case HID_SUBEVENT_CONNECTION_OPENED:
-            if(hid_subevent_connection_opened_get_status(pkt)){
+            if (hid_subevent_connection_opened_get_status(pkt)) {
                 app_state=APP_IDLE; hid_cid=0; led_blink_start();
             } else {
                 app_state=APP_CONN;
@@ -121,12 +109,12 @@ static void pk_handler(uint8_t type, uint16_t ch, uint8_t *pkt, uint16_t){
             break;
 
         case HID_SUBEVENT_CAN_SEND_NOW:
-            if(pending_report && pending_key){
-                send_report(0, pending_key);         // press
+            if (pending_report && pending_key) {
+                send_report(0, pending_key);
                 pending_key = 0; pending_report=false;
-                hid_device_request_can_send_now_event(hid_cid); // schedule release
+                hid_device_request_can_send_now_event(hid_cid);
             } else {
-                send_report(0,0);                    // release
+                send_report(0,0);
             }
             break;
         default: break;
@@ -136,12 +124,11 @@ static void pk_handler(uint8_t type, uint16_t ch, uint8_t *pkt, uint16_t){
     }
 }
 
-// ---------------------- btstack_main -----------------------------------
-#define WDT_TIMEOUT_MS 3000       // 3 s – seguro para pareamento BT
+#define WDT_TIMEOUT_MS 3000
 
-int btstack_main(int, const char**){
+int btstack_main(int, const char**) {
     // GPIO
-    for(int i=0;i<4;++i){
+    for (int i=0;i<4;++i) {
         gpio_init(BTN_PINS[i]);
         gpio_set_dir(BTN_PINS[i], GPIO_IN);
         gpio_pull_up(BTN_PINS[i]);
@@ -157,9 +144,8 @@ int btstack_main(int, const char**){
 
     led_blink_start();
 
-    // Watchdog – não pausa em debug; reset em 3 s se não receber kick
-    watchdog_enable(WDT_TIMEOUT_MS, /*pause_on_debug=*/0);
-    watchdog_update();                            // kick inicial
+    watchdog_enable(WDT_TIMEOUT_MS, 0);
+    watchdog_update();
 
     // BTstack
     gap_discoverable_control(1);
@@ -183,5 +169,5 @@ int btstack_main(int, const char**){
     hid_device_register_packet_handler(pk_handler);
 
     hci_power_control(HCI_POWER_ON);
-    return 0;   // se programa terminar normalmente, LED já está LOW
+    return 0;
 }
